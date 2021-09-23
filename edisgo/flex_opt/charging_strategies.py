@@ -99,6 +99,8 @@ def charging_strategy(
         ----------
         df : :pandas:`pandas.DataFrame<DataFrame>`
             Charging processes DataFrame
+        len_ts : int
+            Length of the timeseries
         timestamp_share_threshold : float
             See description in the main function. Default 0.2
         strategy : str
