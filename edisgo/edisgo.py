@@ -1497,6 +1497,8 @@ def import_edisgo_from_files(directory="", import_topology=True,
                              import_electromobility=False, **kwargs):
     edisgo_obj = EDisGo(import_timeseries=False)
 
+    dtype = kwargs.get("dtype", None)
+
     if import_topology:
         topology_dir = kwargs.get("topology_directory",
                                   os.path.join(directory, "topology"))
@@ -1508,7 +1510,8 @@ def import_edisgo_from_files(directory="", import_topology=True,
 
     if import_timeseries:
         if os.path.exists(os.path.join(directory, "timeseries")):
-            edisgo_obj.timeseries.from_csv(os.path.join(directory, "timeseries"))
+            edisgo_obj.timeseries.from_csv(
+                os.path.join(directory, "timeseries"), dtype=dtype)
         else:
             logging.warning(
                 'No timeseries directory found. Timeseries not imported.')
