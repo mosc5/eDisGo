@@ -1520,7 +1520,7 @@ def import_edisgo_from_files(directory="", import_topology=True,
         parameters = kwargs.get('parameters', None)
         if os.path.exists(os.path.join(directory, "results")):
             edisgo_obj.results.from_csv(os.path.join(directory, "results"),
-                                        parameters)
+                                        parameters, dtype=dtype)
         else:
             logging.warning('No results directory found. Results not imported.')
 
