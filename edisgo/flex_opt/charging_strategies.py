@@ -11,13 +11,13 @@ COLUMNS = {
 
 RELEVANT_CHARGING_STRATEGIES_COLUMNS = {
     "dumb": [
-        "park_start",
+        "park_start_timesteps",
         "minimum_charging_time",
         "netto_charging_capacity_mva"
     ],
     "reduced": [
         "use_case",
-        "park_start",
+        "park_start_timesteps",
         "minimum_charging_time",
         "netto_charging_capacity_mva",
         "reduced_charging_time",
@@ -25,13 +25,13 @@ RELEVANT_CHARGING_STRATEGIES_COLUMNS = {
     ],
     "residual_dumb": [
         "charging_park_id",
-        "park_start",
+        "park_start_timesteps",
         "minimum_charging_time",
         "netto_charging_capacity_mva"
     ],
     "residual": [
-        "park_start",
-        "park_end",
+        "park_start_timesteps",
+        "park_end_timesteps",
         "minimum_charging_time",
         "charging_park_id",
         "netto_charging_capacity_mva"
@@ -164,16 +164,16 @@ def charging_strategy(
 
         """
         # FIXME: SimBEV has a MATLAB legacy and at the moment 1 is eDisGos 0
-        df = df.assign(park_start=df.park_start - 1)
+        df = df.assign(park_start_timesteps=df.park_start_timesteps - 1)
 
         # FIXME: This should become obsolete in the future when SimBEV is
         #  bugfixed drop rows that have a park start higher than simulated days
-        df = df.loc[df.park_start <= len_ts]
+        df = df.loc[df.park_start_timesteps <= len_ts]
 
         # calculate the minimum time taken the fulfill the charging demand
         minimum_charging_time = (
-            df.chargingdemand
-            / df.netto_charging_capacity
+            df.chargingdemand_kWh
+            / df.grid_charging_capacity_kW
             * 60
             / edisgo_obj.electromobility.stepsize
         )
@@ -193,16 +193,16 @@ def charging_strategy(
         df = df.assign(
             minimum_charging_time=minimum_charging_time.astype(np.uint16),
             harmonized_chargingdemand=minimum_charging_time
-            * df.netto_charging_capacity
+            * df.grid_charging_capacity_kW
             * edisgo_obj.electromobility.stepsize
             / 60,
-            netto_charging_capacity_mva=df.netto_charging_capacity.divide(
+            netto_charging_capacity_mva=df.grid_charging_capacity_kW.divide(
                 10 ** 3 * eta_cp
             ),  # kW --> MW
         )
 
         if strategy == "reduced":
-            parking_time = df.park_end - df.park_start
+            parking_time = df.park_end_timesteps - df.park_start_timesteps
 
             # calculate the maximum needed charging time with the minimum
             # charging capacity
@@ -210,7 +210,7 @@ def charging_strategy(
                 df.harmonized_chargingdemand
                 / (
                     minimum_charging_capacity_factor *
-                    df.netto_charging_capacity
+                    df.grid_charging_capacity_kW
                 )
                 * 60
                 / edisgo_obj.electromobility.stepsize
@@ -250,12 +250,12 @@ def charging_strategy(
         elif strategy == "residual":
             # the flex time/band is defined as the amount of time steps not
             # needed to fulfill the charging demand in a parking process
-            parking_time = df.park_end - df.park_start
+            parking_time = df.park_end_timesteps - df.park_start_timesteps
 
             df = df.assign(flex_time=parking_time - df.minimum_charging_time)
 
             df = df.sort_values(
-                by=["flex_time", "park_start"], ascending=[True, True])
+                by=["flex_time", "park_start_timesteps"], ascending=[True, True])
 
         return df
 
@@ -396,7 +396,7 @@ def charging_strategy(
         # get residual load
         init_residual_load = edisgo_obj.timeseries.residual_load
 
-        len_residual_load = int(charging_processes_df.park_end.max())
+        len_residual_load = int(charging_processes_df.park_end_timesteps.max())
 
         if len(init_residual_load) >= len_residual_load:
             init_residual_load = init_residual_load.loc[timeindex]

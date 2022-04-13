@@ -19,18 +19,18 @@ COLUMNS = {
         "car_id",
         "destination",
         "use_case",
-        "netto_charging_capacity",
-        "chargingdemand",
-        "park_start",
-        "park_end",
+        "grid_charging_capacity_kW",
+        "chargingdemand_kWh",
+        "park_start_timesteps",
+        "park_end_timesteps",
     ],
     "matching_demand_and_location": ["charging_park_id", "charging_point_id"],
     "grid_connections_gdf": [
         "ags", "use_case", "user_centric_weight", "geometry"],
     "simbev_config_df": ["value"],
     "available_charging_points_df": [
-        "park_end",
-        "netto_charging_capacity",
+        "park_end_timesteps",
+        "grid_charging_capacity_kW",
         "charging_park_id",
         "use_case",
     ],
@@ -42,10 +42,10 @@ DTYPES = {
         "car_id": np.uint32,
         "destination": str,
         "use_case": str,
-        "netto_charging_capacity": np.float64,
-        "chargingdemand": np.float64,
-        "park_start": np.uint16,
-        "park_end": np.uint16,
+        "grid_charging_capacity_kW": np.float64,
+        "chargingdemand_kWh": np.float64,
+        "park_start_timesteps": np.uint16,
+        "park_end_timesteps": np.uint16,
     },
     "grid_connections_gdf": {
         "ags": np.uint32,
@@ -172,13 +172,13 @@ def import_simbev_electromobility(path, edisgo_obj, **kwargs):
                 df = pd.read_csv(f, index_col=[0])
 
                 if mode == "frugal":
-                    df = df.loc[df.chargingdemand > 0]
+                    df = df.loc[df["chargingdemand_kWh"] > 0]
                 else:
                     pass
 
                 df = df.rename(columns={"location": "destination"})
 
-                df = df.assign(ags=int(f.parts[-2]), car_id=car_id)
+                df = df.assign(ags=int(f.parts[-3]), car_id=car_id)
 
                 df = df[COLUMNS["charging_processes_df"]].astype(
                     DTYPES["charging_processes_df"]
@@ -243,7 +243,7 @@ def import_simbev_electromobility(path, edisgo_obj, **kwargs):
                 15,
                 np.ceil(
                     edisgo_obj.electromobility.charging_processes_df.
-                    park_end.max() / (4 * 24)
+                    park_end_timesteps.max() / (4 * 24)
                 ),
             ]
 
@@ -253,7 +253,7 @@ def import_simbev_electromobility(path, edisgo_obj, **kwargs):
                 data=data, index=index, columns=COLUMNS["simbev_config_df"]
             )
 
-    def read_geojsons_grid_connections(path, dir=None):
+    def read_gpkg_grid_connections(path, dir=None):
         """
         Get GeoDataFrame with all
         `SimBEV <https://github.com/rl-institut/simbev>`_ grid connections.
@@ -261,7 +261,7 @@ def import_simbev_electromobility(path, edisgo_obj, **kwargs):
         Parameters
         ----------
         path : str
-            Main path holding SimBEV output data
+            Main path holding TracBEV output data
         dir : str
             Optional sub-directory holding potential grid connection GEOJSONs
             under path
@@ -276,7 +276,7 @@ def import_simbev_electromobility(path, edisgo_obj, **kwargs):
         if dir is not None:
             path = os.path.join(path, dir)
 
-        files = [f for f in os.listdir(path) if f.endswith(".geojson")]
+        files = [f for f in os.listdir(path) if f.endswith(".gpkg")]
 
         epsg = edisgo_obj.topology.grid_district["srid"]
 
@@ -287,17 +287,17 @@ def import_simbev_electromobility(path, edisgo_obj, **kwargs):
 
         for f in files:
             gdf = gpd.read_file(os.path.join(path, f))
+            gdf = gdf.to_crs(epsg=epsg)
 
             # drop unnecessary columns
             if len(gdf) > 0:
-                if "name" in gdf.columns:
-                    gdf = gdf.drop(["name"], axis="columns")
-
-                if "landuse" in gdf.columns:
-                    gdf = gdf.drop(["landuse"], axis="columns")
-
-                if "area" in gdf.columns:
-                    gdf = gdf.drop(["area"], axis="columns")
+                # drop unused columns
+                bad_col_names = ["name", "landuse", "area", "exists", "new_hpc_index", "hpc_count", "share", "energy",
+                                 "gid", "grid_id", "population", "geom_point", "num", "num_mfh", "new_hpc_tag", "count",
+                                 "radius", "energy"]
+                for bcol in bad_col_names:
+                    if bcol in gdf.columns:
+                        gdf = gdf.drop([bcol], axis="columns")
 
                 # levelize all GeoDataFrames to the same format
                 if len(gdf.columns) == 2:
@@ -314,9 +314,9 @@ def import_simbev_electromobility(path, edisgo_obj, **kwargs):
                 else:
                     raise ValueError(
                         f"GEOJSON {f} contains unknown properties.")
-
+                f_info = f.split("_")
                 gdf = gdf.assign(
-                    use_case=USECASES[f[:3]], ags=int(f.split("_")[-2]))
+                    use_case=f_info[1], ags=f_info[2].split(".")[0])
 
                 gdf = gdf[COLUMNS["grid_connections_gdf"]].astype(
                     DTYPES["grid_connections_gdf"]
@@ -445,7 +445,7 @@ def import_simbev_electromobility(path, edisgo_obj, **kwargs):
     )
 
     edisgo_obj.electromobility.grid_connections_gdf = \
-        read_geojsons_grid_connections(
+        read_gpkg_grid_connections(
             path, dir=kwargs.pop("grid_connections_dir", "grid_connections"),
             **kwargs
         )
@@ -770,7 +770,7 @@ def distribute_charging_demand(edisgo_obj, **kwargs):
                             (private_charging_destination_df.car_id == car_id)
                             & (private_charging_destination_df.destination
                                == "0_work")
-                        ].netto_charging_capacity.iat[0]
+                        ].grid_charging_capacity_kW.iat[0]
                         / edisgo_obj.electromobility.eta_charging_points
                     )
 
@@ -829,7 +829,7 @@ def distribute_charging_demand(edisgo_obj, **kwargs):
                                     private_charging_destination_df.destination
                                     == "6_home"
                                 )
-                            ].netto_charging_capacity.iat[0]
+                            ].grid_charging_capacity_kW.iat[0]
 
                         designated_charging_point_capacity_df.at[
                             charging_park_id,
@@ -860,7 +860,7 @@ def distribute_charging_demand(edisgo_obj, **kwargs):
                     == "public"
                 )
             ].sort_values(
-                by=["park_start", "park_end"], ascending=[True, True])
+                by=["park_start_timesteps", "park_end_timesteps"], ascending=[True, True])
 
         try:
             rng = default_rng(seed=edisgo_obj.topology.id)
@@ -885,10 +885,10 @@ def distribute_charging_demand(edisgo_obj, **kwargs):
             use_case = PUBLIC_DESTINATIONS[row["destination"]]
 
             matching_charging_points_df = available_charging_points_df.loc[
-                (available_charging_points_df.park_end < row["park_end"])
+                (available_charging_points_df.park_end_timesteps < row["park_end_timesteps"])
                 & (
-                    available_charging_points_df.netto_charging_capacity.round(
-                        1) == round(row["netto_charging_capacity"], 1)
+                    available_charging_points_df.grid_charging_capacity_kW.round(
+                        1) == round(row["grid_charging_capacity_kW"], 1)
                 )
             ]
 
@@ -912,8 +912,8 @@ def distribute_charging_demand(edisgo_obj, **kwargs):
                     idx, "charging_point_id"
                 ] = charging_point_s.name
 
-                available_charging_points_df.at[idx, "park_end"] = \
-                    row["park_end"]
+                available_charging_points_df.at[idx, "park_end_timesteps"] = \
+                    row["park_end_timesteps"]
 
             else:
                 grid_connections_indices = (
@@ -962,7 +962,7 @@ def distribute_charging_demand(edisgo_obj, **kwargs):
 
                 designated_charging_point_capacity_df.at[
                     charging_park_id, "designated_charging_point_capacity"
-                ] += row["netto_charging_capacity"]
+                ] += row["grid_charging_capacity_kW"]
 
     distribute_private_charging_demand(edisgo_obj)
 

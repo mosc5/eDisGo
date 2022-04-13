@@ -17,10 +17,10 @@ COLUMNS = {
         "car_id",
         "destination",
         "use_case",
-        "netto_charging_capacity",
-        "chargingdemand",
-        "park_start",
-        "park_end",
+        "grid_charging_capacity_kW",
+        "chargingdemand_kWh",
+        "park_start_timesteps",
+        "park_end_timesteps",
     ],
     "grid_connections_gdf": [
         "id",
@@ -37,8 +37,8 @@ COLUMNS = {
         "charging_point_weight",
     ],
     "designated_charging_points_df": [
-        "park_end",
-        "netto_charging_capacity",
+        "park_end_timesteps",
+        "grid_charging_capacity_kW",
         "charging_park_id",
         "use_case",
     ],
@@ -181,7 +181,7 @@ class Electromobility:
 
         """
         try:
-            return int(self.simbev_config_df.at["days", "value"])
+            return int(self.simbev_config_df.at["simulated_days", "value"])
         except Exception:
             return None
 
@@ -198,7 +198,7 @@ class Electromobility:
 
         """
         try:
-            return float(self.simbev_config_df.at["eta_CP", "value"])
+            return float(self.simbev_config_df.at["eta_cp", "value"])
         except Exception:
             return None
 
